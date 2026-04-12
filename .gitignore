@@ -1,0 +1,5 @@
+docksmith
+*.tar
+~/.docksmith/
+/root/.docksmith/
+*.json
