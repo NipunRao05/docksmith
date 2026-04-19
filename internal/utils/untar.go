@@ -40,7 +40,7 @@ func ExtractTar(tarPath, targetDir string) error {
 		if err != nil {
 			return err
 		}
-		
+
 		_, err = io.Copy(out, tr)
 		out.Close()
 		if err != nil {

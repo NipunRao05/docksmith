@@ -37,4 +37,3 @@ func LayersDir() string {
 func CacheDir() string {
 	return filepath.Join(baseDir, "cache")
 }
-

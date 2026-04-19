@@ -4,19 +4,19 @@ import (
 	"bufio"
 	"errors"
 	"os"
-	"strings"
 	"strconv"
+	"strings"
 
 	"docksmith/internal/model"
 )
 
 var validInstructions = map[string]bool{
-	"FROM":		true,
-	"COPY":		true,
-	"RUN":		true,
-	"WORKDIR":	true,
-	"ENV":		true,
-	"CMD":		true,
+	"FROM":    true,
+	"COPY":    true,
+	"RUN":     true,
+	"WORKDIR": true,
+	"ENV":     true,
+	"CMD":     true,
 }
 
 func ParseDocksmithfile(path string) ([]model.Instruction, error) {
@@ -49,7 +49,7 @@ func ParseDocksmithfile(path string) ([]model.Instruction, error) {
 		instruction := model.Instruction{
 			Type: instType,
 			Args: parts[1:],
-			Raw: line,
+			Raw:  line,
 			Line: lineNum,
 		}
 
@@ -57,7 +57,7 @@ func ParseDocksmithfile(path string) ([]model.Instruction, error) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, err	
+		return nil, err
 	}
 
 	return instructions, nil

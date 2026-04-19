@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
-	"os/exec" 
-    	"docksmith/internal/runtime"
 
 	"docksmith/internal/model"
+	"docksmith/internal/runtime"
 	"docksmith/internal/storage"
 	"docksmith/internal/utils"
 )
@@ -42,6 +42,9 @@ func ExecuteInstructionsWithOutput(instructions []model.Instruction, noCache boo
 
 		case "FROM":
 			fmt.Printf("Step %d/%d : FROM %s\n", stepNum, total, strings.Join(inst.Args, " "))
+			if err := handleFrom(inst, state); err != nil {
+				return nil, err
+			}
 
 		case "WORKDIR":
 			fmt.Printf("Step %d/%d : WORKDIR %s\n", stepNum, total, strings.Join(inst.Args, " "))
@@ -68,8 +71,11 @@ func ExecuteInstructionsWithOutput(instructions []model.Instruction, noCache boo
 					layerFile := strings.ReplaceAll(digest, ":", "_") + ".tar"
 					layerPath := filepath.Join(storage.LayersDir(), layerFile)
 					if _, err := os.Stat(layerPath); err == nil {
+						if err := utils.ExtractTar(layerPath, state.RootFS); err != nil {
+							return nil, fmt.Errorf("failed to apply cached COPY layer %s: %w", digest, err)
+						}
 						fmt.Printf("Step %d/%d : COPY %s [CACHE HIT]\n", stepNum, total, strings.Join(inst.Args, " "))
-						state.Layers = append(state.Layers, digest)
+						recordProducedLayer(state, digest)
 						continue
 					}
 				}
@@ -96,9 +102,16 @@ func ExecuteInstructionsWithOutput(instructions []model.Instruction, noCache boo
 
 			if !noCache && !cacheMissed {
 				if digest, ok := cache[key]; ok {
-					fmt.Printf("Step %d/%d : RUN %s [CACHE HIT]\n", stepNum, total, strings.Join(inst.Args, " "))
-					state.Layers = append(state.Layers, digest)
-					continue
+					layerFile := strings.ReplaceAll(digest, ":", "_") + ".tar"
+					layerPath := filepath.Join(storage.LayersDir(), layerFile)
+					if _, err := os.Stat(layerPath); err == nil {
+						if err := utils.ExtractTar(layerPath, state.RootFS); err != nil {
+							return nil, fmt.Errorf("failed to apply cached RUN layer %s: %w", digest, err)
+						}
+						fmt.Printf("Step %d/%d : RUN %s [CACHE HIT]\n", stepNum, total, strings.Join(inst.Args, " "))
+						recordProducedLayer(state, digest)
+						continue
+					}
 				}
 			}
 
@@ -114,10 +127,10 @@ func ExecuteInstructionsWithOutput(instructions []model.Instruction, noCache boo
 				cacheUpdated = true
 			}
 
-			default:
-				return nil, fmt.Errorf("unknown instruction: %s at line %d", inst.Type, inst.Line)
-			}
+		default:
+			return nil, fmt.Errorf("unknown instruction: %s at line %d", inst.Type, inst.Line)
 		}
+	}
 
 	if cacheUpdated {
 		if err := storage.SaveCache(cache); err != nil {
@@ -139,6 +152,71 @@ func handleEnv(inst model.Instruction, state *BuildState) {
 			}
 		}
 	}
+}
+
+func handleFrom(inst model.Instruction, state *BuildState) error {
+	if len(inst.Args) != 1 {
+		return fmt.Errorf("FROM requires exactly one image reference at line %d", inst.Line)
+	}
+
+	name, tag, err := parseImageRef(inst.Args[0])
+	if err != nil {
+		return fmt.Errorf("invalid FROM reference at line %d: %w", inst.Line, err)
+	}
+
+	manifestFile := name + "_" + tag + ".json"
+	img, err := storage.LoadImage(manifestFile)
+	if err != nil {
+		return fmt.Errorf("base image %s:%s not found in local store", name, tag)
+	}
+
+	state.BaseImageDigest = img.Digest
+	state.LastProducedLayerDigest = ""
+	state.ProducedLayerCount = 0
+
+	for _, layer := range img.Layers {
+		layerFile := strings.ReplaceAll(layer.Digest, ":", "_") + ".tar"
+		layerPath := filepath.Join(storage.LayersDir(), layerFile)
+		if _, err := os.Stat(layerPath); err != nil {
+			return fmt.Errorf("base layer missing for %s:%s: %s", name, tag, layer.Digest)
+		}
+
+		if err := utils.ExtractTar(layerPath, state.RootFS); err != nil {
+			return fmt.Errorf("failed to extract base layer %s: %w", layer.Digest, err)
+		}
+
+		state.Layers = append(state.Layers, layer.Digest)
+	}
+
+	return nil
+}
+
+func parseImageRef(ref string) (string, string, error) {
+	if ref == "" {
+		return "", "", fmt.Errorf("empty image reference")
+	}
+
+	parts := strings.SplitN(ref, ":", 2)
+	name := strings.TrimSpace(parts[0])
+	if name == "" {
+		return "", "", fmt.Errorf("missing image name")
+	}
+
+	tag := "latest"
+	if len(parts) == 2 {
+		tag = strings.TrimSpace(parts[1])
+		if tag == "" {
+			return "", "", fmt.Errorf("missing image tag")
+		}
+	}
+
+	return name, tag, nil
+}
+
+func recordProducedLayer(state *BuildState, digest string) {
+	state.Layers = append(state.Layers, digest)
+	state.LastProducedLayerDigest = digest
+	state.ProducedLayerCount++
 }
 
 func copyEssentials(root string) error {
@@ -335,9 +413,6 @@ func createLayerFromState(state *BuildState) error {
 		return err
 	}
 
-	state.Layers = append(state.Layers, digest)
+	recordProducedLayer(state, digest)
 	return nil
 }
-
-
-

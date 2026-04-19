@@ -1,13 +1,13 @@
 package cli
 
 import (
+	"docksmith/internal/model"
+	"docksmith/internal/storage"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-	"docksmith/internal/model"
-	"docksmith/internal/storage"
 )
 
 func HandleImages() error {

@@ -1,10 +1,10 @@
 package main
 
 import (
-	"fmt"
-	"os"
 	"docksmith/internal/cli"
 	"docksmith/internal/runtime"
+	"fmt"
+	"os"
 )
 
 func main() {

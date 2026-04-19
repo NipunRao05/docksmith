@@ -15,9 +15,12 @@ import (
 func generateCacheKey(inst model.Instruction, state *BuildState) string {
 	var data strings.Builder
 
-	// Previous layer digest (or empty if none yet)
-	if len(state.Layers) > 0 {
-		data.WriteString(state.Layers[len(state.Layers)-1])
+	// Previous layer digest for cache chain.
+	// First COPY/RUN after FROM uses base image digest.
+	if state.LastProducedLayerDigest != "" {
+		data.WriteString(state.LastProducedLayerDigest)
+	} else if state.BaseImageDigest != "" {
+		data.WriteString(state.BaseImageDigest)
 	}
 
 	// Full instruction text

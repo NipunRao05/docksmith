@@ -3,3 +3,5 @@ docksmith
 ~/.docksmith/
 /root/.docksmith/
 *.json
+
+dev/

@@ -45,7 +45,7 @@ func ListImages() ([]string, error) {
 			images = append(images, file.Name())
 		}
 	}
-	
+
 	return images, nil
 }
 

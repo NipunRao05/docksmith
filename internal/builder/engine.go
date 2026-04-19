@@ -23,6 +23,10 @@ func (e *Engine) Build(tag string, context string) error {
 		return err
 	}
 
+	if err := validateBuildInstructions(instructions); err != nil {
+		return err
+	}
+
 	total := len(instructions)
 	buildStart := time.Now()
 
@@ -83,5 +87,34 @@ func (e *Engine) Build(tag string, context string) error {
 		shortDigest = shortDigest[7:15]
 	}
 	fmt.Printf("Successfully built sha256:%s %s (%.2fs)\n", shortDigest, tag, totalTime.Seconds())
+	return nil
+}
+
+func validateBuildInstructions(instructions []model.Instruction) error {
+	if len(instructions) == 0 {
+		return fmt.Errorf("Docksmithfile is empty")
+	}
+
+	fromIndex := -1
+	for i, inst := range instructions {
+		if inst.Type != "FROM" {
+			continue
+		}
+
+		if fromIndex != -1 {
+			return fmt.Errorf("multiple FROM instructions are not supported (line %d)", inst.Line)
+		}
+
+		fromIndex = i
+	}
+
+	if fromIndex == -1 {
+		return fmt.Errorf("missing FROM instruction")
+	}
+
+	if fromIndex != 0 {
+		return fmt.Errorf("FROM must be the first instruction (line %d)", instructions[fromIndex].Line)
+	}
+
 	return nil
 }

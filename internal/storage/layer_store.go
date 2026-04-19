@@ -1,10 +1,10 @@
 package storage
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
-	"io"
 )
 
 func SaveLayer(tempTarPath, digest string) (string, error) {

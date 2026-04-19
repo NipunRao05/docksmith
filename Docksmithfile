@@ -1,6 +1,6 @@
-FROM base
+FROM alpine:3.18
 WORKDIR /app
 COPY test.txt /app
 RUN echo "build complete" > result.txt
 ENV MESSAGE=hello
-CMD echo %MESSAGE% from docksmith
+CMD echo $MESSAGE from docksmith

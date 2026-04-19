@@ -6,8 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"time"
 	"strings"
+	"time"
 )
 
 func CreateTar(sourceDir, tarPath string) error {

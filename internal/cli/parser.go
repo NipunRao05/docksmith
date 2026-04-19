@@ -11,18 +11,20 @@ func HandleCommand(args []string) error {
 	}
 
 	command := args[1]
-	
+
 	switch command {
 
-		case "build":
-			return HandleBuild(args[2:])
-		case "run":
-			return HandleRun(args[2:])
-		case "images":
-			return HandleImages()
-		case "rmi":
-			return HandleRMI(args[2:])
-		default:
-			return errors.New("Unknown command" + command)
+	case "build":
+		return HandleBuild(args[2:])
+	case "run":
+		return HandleRun(args[2:])
+	case "images":
+		return HandleImages()
+	case "import":
+		return HandleImport(args[2:])
+	case "rmi":
+		return HandleRMI(args[2:])
+	default:
+		return errors.New("Unknown command" + command)
 	}
 }

@@ -5,5 +5,9 @@ type BuildState struct {
 	Env        map[string]string
 	Cmd        []string
 	Layers     []string
-	RootFS	   string
+	RootFS     string
+
+	BaseImageDigest         string
+	LastProducedLayerDigest string
+	ProducedLayerCount      int
 }
