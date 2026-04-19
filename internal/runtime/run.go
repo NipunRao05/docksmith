@@ -71,6 +71,11 @@ func Run(imageName string, extraEnv []string, cmdOverride []string) error {
 }
 
 func RunIsolated(root, workDir string, cmdArgs, env []string) error {
+	// Isolation requires root
+	if os.Getuid() != 0 {
+		return fmt.Errorf("chroot isolation requires root (uid 0), got uid %d. Run with: sudo ./docksmith", os.Getuid())
+	}
+
 	if err := copyEssentials(root); err != nil {
 		return fmt.Errorf("setup essentials failed: %v", err)
 	}
@@ -80,7 +85,7 @@ func RunIsolated(root, workDir string, cmdArgs, env []string) error {
 		return fmt.Errorf("failed to get executable path: %w", err)
 	}
 
-	// Try with full namespace isolation first (VMs)
+	// Use full namespace isolation (chroot + CLONE_NEWUTS/CLONE_NEWPID/CLONE_NEWNS)
 	cmd := exec.Command(exe, append([]string{"__chroot__", root, workDir}, cmdArgs...)...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Cloneflags: syscall.CLONE_NEWUTS |
@@ -92,19 +97,7 @@ func RunIsolated(root, workDir string, cmdArgs, env []string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	
-	err = cmd.Run()
-	
-	// If full namespaces fail, try with just chroot (WSL2 fallback)
-	if err != nil {
-		cmd = exec.Command(exe, append([]string{"__chroot__", root, workDir}, cmdArgs...)...)
-		cmd.SysProcAttr = nil // No namespace flags, just chroot
-		cmd.Env = env
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		err = cmd.Run()
-	}
-	return err
+	return cmd.Run()
 }
 
 func RunChroot(args []string) error {
@@ -116,27 +109,19 @@ func RunChroot(args []string) error {
 	workDir := args[1]
 	cmdArgs := args[2:]
 
+	// Isolation requires root
+	if os.Getuid() != 0 {
+		return fmt.Errorf("chroot isolation requires root (uid 0), got uid %d", os.Getuid())
+	}
+
 	// Create dirs
 	os.MkdirAll(filepath.Join(root, "proc"), 0755)
 	os.MkdirAll(filepath.Join(root, "dev"), 0755)
 	os.MkdirAll(filepath.Join(root, "sys"), 0755)
 	os.MkdirAll(filepath.Join(root, "tmp"), 01777)
 
-	// Try chroot (VMs)
-	err := tryChroot(root, workDir, cmdArgs)
-	if err != nil && strings.Contains(err.Error(), "operation not permitted") {
-		// WSL2 fallback: run without chroot, just in the temp root dir
-		cmd := exec.Command("/bin/sh", "-c", strings.Join(cmdArgs, " "))
-		cmd.Dir = filepath.Join(root, workDir)
-		cmd.Env = []string{
-			"PATH=/usr/bin:/bin:/usr/local/bin",
-		}
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		return cmd.Run()
-	}
-	return err
+	// Perform chroot isolation - fail if it doesn't work
+	return tryChroot(root, workDir, cmdArgs)
 }
 
 func tryChroot(root, workDir string, cmdArgs []string) error {
