@@ -1,10 +1,12 @@
 package cli
 
 import (
+	"compress/gzip"
 	"docksmith/internal/model"
 	"docksmith/internal/storage"
 	"docksmith/internal/utils"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -23,6 +25,17 @@ func HandleImport(args []string) error {
 		return fmt.Errorf("tar file not found: %s", tarPath)
 	}
 
+	// Decompress if gzipped
+	finalTarPath := tarPath
+	if strings.HasSuffix(tarPath, ".gz") {
+		decompressed, err := decompressGzip(tarPath)
+		if err != nil {
+			return fmt.Errorf("failed to decompress: %v", err)
+		}
+		defer os.Remove(decompressed)
+		finalTarPath = decompressed
+	}
+
 	// Parse image reference (name:tag)
 	parts := strings.Split(imageRef, ":")
 	var name, tag string
@@ -37,13 +50,13 @@ func HandleImport(args []string) error {
 	}
 
 	// Compute layer digest from tar file
-	digest, err := utils.HashFile(tarPath)
+	digest, err := utils.HashFile(finalTarPath)
 	if err != nil {
 		return fmt.Errorf("failed to compute digest: %v", err)
 	}
 
 	// Save the layer
-	layerPath, err := storage.SaveLayer(tarPath, digest)
+	layerPath, err := storage.SaveLayer(finalTarPath, digest)
 	if err != nil {
 		return fmt.Errorf("failed to save layer: %v", err)
 	}
@@ -82,4 +95,31 @@ func HandleImport(args []string) error {
 
 	fmt.Printf("Imported %s:%s with digest %s\n", name, tag, digest[:19])
 	return nil
+}
+
+func decompressGzip(gzPath string) (string, error) {
+	gzFile, err := os.Open(gzPath)
+	if err != nil {
+		return "", err
+	}
+	defer gzFile.Close()
+
+	gzReader, err := gzip.NewReader(gzFile)
+	if err != nil {
+		return "", err
+	}
+	defer gzReader.Close()
+
+	tmpFile, err := os.CreateTemp("", "docksmith-import-*.tar")
+	if err != nil {
+		return "", err
+	}
+	defer tmpFile.Close()
+
+	if _, err := io.Copy(tmpFile, gzReader); err != nil {
+		os.Remove(tmpFile.Name())
+		return "", err
+	}
+
+	return tmpFile.Name(), nil
 }

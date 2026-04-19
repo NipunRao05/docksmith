@@ -75,7 +75,13 @@ func RunIsolated(root, workDir string, cmdArgs, env []string) error {
 		return fmt.Errorf("setup essentials failed: %v", err)
 	}
 
-	cmd := exec.Command("/proc/self/exe", append([]string{"__chroot__", root, workDir}, cmdArgs...)...)
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to get executable path: %w", err)
+	}
+
+	// Try with full namespace isolation first (VMs)
+	cmd := exec.Command(exe, append([]string{"__chroot__", root, workDir}, cmdArgs...)...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Cloneflags: syscall.CLONE_NEWUTS |
 			syscall.CLONE_NEWPID |
@@ -85,7 +91,20 @@ func RunIsolated(root, workDir string, cmdArgs, env []string) error {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	
+	err = cmd.Run()
+	
+	// If full namespaces fail, try with just chroot (WSL2 fallback)
+	if err != nil {
+		cmd = exec.Command(exe, append([]string{"__chroot__", root, workDir}, cmdArgs...)...)
+		cmd.SysProcAttr = nil // No namespace flags, just chroot
+		cmd.Env = env
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		err = cmd.Run()
+	}
+	return err
 }
 
 func RunChroot(args []string) error {
@@ -103,6 +122,24 @@ func RunChroot(args []string) error {
 	os.MkdirAll(filepath.Join(root, "sys"), 0755)
 	os.MkdirAll(filepath.Join(root, "tmp"), 01777)
 
+	// Try chroot (VMs)
+	err := tryChroot(root, workDir, cmdArgs)
+	if err != nil && strings.Contains(err.Error(), "operation not permitted") {
+		// WSL2 fallback: run without chroot, just in the temp root dir
+		cmd := exec.Command("/bin/sh", "-c", strings.Join(cmdArgs, " "))
+		cmd.Dir = filepath.Join(root, workDir)
+		cmd.Env = []string{
+			"PATH=/usr/bin:/bin:/usr/local/bin",
+		}
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		return cmd.Run()
+	}
+	return err
+}
+
+func tryChroot(root, workDir string, cmdArgs []string) error {
 	// Make mounts private BEFORE chroot
 	if err := syscall.Mount("", "/", "", syscall.MS_PRIVATE|syscall.MS_REC, ""); err != nil {
 		return err
@@ -257,6 +294,8 @@ func substituteEnv(args []string, envMap map[string]string) []string {
 	result := make([]string, len(args))
 	for i, arg := range args {
 		for key, val := range envMap {
+			// Replace both $KEY and %KEY% formats
+			arg = strings.ReplaceAll(arg, "$"+key, val)
 			arg = strings.ReplaceAll(arg, "%"+key+"%", val)
 		}
 		result[i] = arg

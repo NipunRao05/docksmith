@@ -1,6 +1,9 @@
 package builder
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -63,11 +66,20 @@ func (e *Engine) Build(tag string, context string) error {
 		return fmt.Errorf("no layers produced")
 	}
 
+	// Check if image already exists to preserve timestamp on cache hits
+	createdTime := time.Now().Format(time.RFC3339)
+	existingManifestFile := name + "_" + tagName + ".json"
+	if existingImg, err := storage.LoadImage(existingManifestFile); err == nil {
+		// Image exists, preserve its creation timestamp
+		createdTime = existingImg.Created
+	}
+
+	// Create image with empty digest for canonical JSON hashing
 	img := model.Image{
 		Name:    name,
 		Tag:     tagName,
-		Digest:  state.Layers[len(state.Layers)-1],
-		Created: time.Now().Format(time.RFC3339),
+		Digest:  "", // Empty for hashing
+		Created: createdTime,
 		Config: model.Config{
 			Env:        envList,
 			Cmd:        state.Cmd,
@@ -75,6 +87,14 @@ func (e *Engine) Build(tag string, context string) error {
 		},
 		Layers: layers,
 	}
+
+	// Compute manifest digest from canonical JSON
+	jsonBytes, err := json.Marshal(img)
+	if err != nil {
+		return fmt.Errorf("failed to marshal image: %v", err)
+	}
+	hash := sha256.Sum256(jsonBytes)
+	img.Digest = "sha256:" + hex.EncodeToString(hash[:])
 
 	err = storage.SaveImage(img)
 	if err != nil {
