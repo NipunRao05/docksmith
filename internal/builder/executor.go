@@ -30,9 +30,11 @@ func ExecuteInstructionsWithOutput(instructions []model.Instruction, noCache boo
 	}
 
 	state := &BuildState{
-		WorkingDir: "/",
-		Env:        make(map[string]string),
-		RootFS:     root,
+		WorkingDir:             "/",
+		Env:                    make(map[string]string),
+		RootFS:                 root,
+		LayerCreatedBy:         make(map[string]string),
+		PreviousFileHashes:     make(map[string]string),
 	}
 
 	for i, inst := range instructions {
@@ -188,6 +190,12 @@ func handleFrom(inst model.Instruction, state *BuildState) error {
 		state.Layers = append(state.Layers, layer.Digest)
 	}
 
+	// Compute initial file hashes after loading base image
+	// This allows us to detect changes in subsequent COPY/RUN instructions
+	if hashes, err := utils.ComputeFileHashes(state.RootFS); err == nil {
+		state.PreviousFileHashes = hashes
+	}
+
 	return nil
 }
 
@@ -318,7 +326,7 @@ func handleCopy(inst model.Instruction, state *BuildState) error {
 		}
 	}
 
-	return createLayerFromState(state)
+	return createLayerFromState(state, inst.Raw)
 }
 func copyDir(src string, dest string) error {
 	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
@@ -378,7 +386,7 @@ func handleRun(inst model.Instruction, state *BuildState) error {
 	// so they don't pollute the image layer
 	cleanupInjected(state.RootFS)
 
-	return createLayerFromState(state)
+	return createLayerFromState(state, inst.Raw)
 }
 
 func cleanupInjected(root string) {
@@ -396,12 +404,24 @@ func cleanupInjected(root string) {
 	}
 }
 
-func createLayerFromState(state *BuildState) error {
+func createLayerFromState(state *BuildState, instruction string) error {
 	tempTar := filepath.Join(os.TempDir(), fmt.Sprintf("layer-%d.tar", time.Now().UnixNano()))
 
-	// Make sure tempTar is not inside sourceDir
-	if err := utils.CreateTar(state.RootFS, tempTar); err != nil {
+	// Compute current file hashes
+	currentHashes, err := utils.ComputeFileHashes(state.RootFS)
+	if err != nil {
 		return err
+	}
+
+	// Use delta tar if we have previous state, otherwise use full tar
+	if len(state.PreviousFileHashes) > 0 {
+		if err := utils.CreateDeltaTar(state.RootFS, tempTar, state.PreviousFileHashes, currentHashes); err != nil {
+			return err
+		}
+	} else {
+		if err := utils.CreateTar(state.RootFS, tempTar); err != nil {
+			return err
+		}
 	}
 
 	digest, err := utils.HashFile(tempTar)
@@ -414,5 +434,9 @@ func createLayerFromState(state *BuildState) error {
 	}
 
 	recordProducedLayer(state, digest)
+	// Store instruction text for this layer
+	state.LayerCreatedBy[digest] = instruction
+	// Update previous hashes for next layer
+	state.PreviousFileHashes = currentHashes
 	return nil
 }
