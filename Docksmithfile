@@ -1,6 +1,6 @@
 FROM alpine:3.18
 WORKDIR /app
-COPY test.txt /app
-RUN echo "build complete" > result.txt
-ENV MESSAGE=hello
-CMD echo $MESSAGE from docksmith
+RUN mkdir -p /app/docs /app/config /app/data
+
+COPY test.txt /app/test.txt
+COPY app.txt /app/app.txt
