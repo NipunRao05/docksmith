@@ -77,8 +77,7 @@ func ExecuteInstructionsWithOutput(instructions []model.Instruction, noCache boo
 							return nil, fmt.Errorf("failed to apply cached COPY layer %s: %w", digest, err)
 						}
 						fmt.Printf("Step %d/%d : COPY %s [CACHE HIT]\n", stepNum, total, strings.Join(inst.Args, " "))
-						recordProducedLayer(state, digest)
-						continue
+						recordProducedLayer(state, digest)					state.LayerCreatedBy[digest] = inst.Raw						continue
 					}
 				}
 			}
@@ -111,8 +110,7 @@ func ExecuteInstructionsWithOutput(instructions []model.Instruction, noCache boo
 							return nil, fmt.Errorf("failed to apply cached RUN layer %s: %w", digest, err)
 						}
 						fmt.Printf("Step %d/%d : RUN %s [CACHE HIT]\n", stepNum, total, strings.Join(inst.Args, " "))
-						recordProducedLayer(state, digest)
-						continue
+						recordProducedLayer(state, digest)					state.LayerCreatedBy[digest] = inst.Raw						continue
 					}
 				}
 			}
