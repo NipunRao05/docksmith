@@ -55,10 +55,14 @@ func (e *Engine) Build(tag string, context string) error {
 		// Get size of layer file
 		layerFile := strings.ReplaceAll(digest, ":", "_") + ".tar"
 		size := storage.LayerSize(layerFile)
+		createdBy := ""
+		if cb, exists := state.LayerCreatedBy[digest]; exists {
+			createdBy = cb
+		}
 		layers = append(layers, model.Layer{
 			Digest:    digest,
 			Size:      size,
-			CreatedBy: "",
+			CreatedBy: createdBy,
 		})
 	}
 

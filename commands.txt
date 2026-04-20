@@ -1,0 +1,22 @@
+# See all layers for each image
+for img in ~/.docksmith/images/*; do
+  name=$(basename $img .json)
+  count=$(cat "$img" | jq '.layers | length')
+  echo "$name: $count layers"
+done
+
+# See each image's full layer chain with digests
+for img in ~/.docksmith/images/*; do
+  echo "=== $(basename $img .json) ==="
+  cat "$img" | jq '.layers[] | {digest, size, createdBy}'
+done
+
+# See which layers each image uses
+for img in ~/.docksmith/images/*; do
+  echo "$(basename $img .json):"
+  cat "$img" | jq '.layers[].digest' -r
+  echo ""
+done
+
+# to check manifest
+cat ~/.docksmith/images/myapp_latest.json | jq .
