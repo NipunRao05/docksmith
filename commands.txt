@@ -1,3 +1,15 @@
+# build
+go build -o docksmith ./cmd/docksmith
+
+# Clear old data
+rm -rf ~/.docksmith/images/* ~/.docksmith/cache/*
+
+# Re-import
+./docksmith import ~/.docksmith/backups/alpine-minirootfs-3.18.0-x86_64.tar.gz alpine:3.18
+
+# First build
+./docksmith build -t myapp:latest .
+
 # See all layers for each image
 for img in ~/.docksmith/images/*; do
   name=$(basename $img .json)
